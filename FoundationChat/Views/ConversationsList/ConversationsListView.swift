@@ -1,23 +1,42 @@
-import SwiftData
 import SwiftUI
+import SharingGRDB
 
 struct ConversationsListView: View {
-  @Environment(\.modelContext) private var modelContext
-  @Query private var conversations: [Conversation]
-
-  @State private var path: [Conversation] = []
+  @FetchAll(
+    Conversation
+      .leftJoin(Message.all) { $0.id == $1.conversationId }
+      .group(by: \.id)
+      .order(Message.column("timestamp").max().desc())
+      .select { $0 }
+  )
+  var conversations: [Conversation]
+  
+  @Dependency(\.defaultDatabase) var database
+  
+  private func deleteConversation(_ conversation: Conversation) {
+    do {
+      try database.write { db in
+        try Message
+          .filter(\.conversationId == conversation.id)
+          .deleteAll(db)
+        try Conversation
+          .filter(\.id == conversation.id)
+          .deleteAll(db)
+      }
+    } catch {
+      print("Error deleting conversation: \(error)")
+    }
+  }
 
   var body: some View {
-    NavigationStack(path: $path) {
+    NavigationStack {
       List {
-        ForEach(conversations.sorted(by: { $0.lastMessageTimestamp > $1.lastMessageTimestamp })) {
-          conversation in
+        ForEach(conversations) { conversation in
           NavigationLink(value: conversation) {
             ConversationRowView(conversation: conversation)
               .swipeActions {
                 Button(role: .destructive) {
-                  modelContext.delete(conversation)
-                  try? modelContext.save()
+                  deleteConversation(conversation)
                 } label: {
                   Label("Delete", systemImage: "trash")
                 }
@@ -36,10 +55,13 @@ struct ConversationsListView: View {
       .toolbar {
         ToolbarItem(placement: .navigationBarTrailing) {
           Button {
-            let newConversation = Conversation(messages: [], summary: "New conversation")
-            modelContext.insert(newConversation)
-            try? modelContext.save()
-            path.append(newConversation)
+            do {
+              try database.write { db in
+                try Conversation.Draft(summary: "New conversation").insert(db)
+              }
+            } catch {
+              print("Error creating conversation: \(error)")
+            }
           } label: {
             Image(systemName: "plus")
           }

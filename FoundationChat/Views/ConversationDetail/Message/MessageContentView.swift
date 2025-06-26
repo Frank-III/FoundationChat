@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MessageContentView: View {
-  let message: Message
+    let message: Message
 
   var body: some View {
     Text(message.content)
