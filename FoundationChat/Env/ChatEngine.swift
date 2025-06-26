@@ -1,12 +1,19 @@
 import FoundationModels
 import Playgrounds
 import SwiftUI
+import SharingGRDB
 
 @Observable
 class ChatEngine {
   private let model = SystemLanguageModel.default
   private let session: LanguageModelSession
   private let conversation: Conversation
+  
+  @FetchAll(
+    Message
+      .where(\.conversationId == conversation.id)
+      .order(\.timestamp)
+  ) var messages: [Message]
 
   var isAvailable: Bool {
     switch model.availability {
@@ -18,7 +25,7 @@ class ChatEngine {
   }
 
   var conversationHistory: String {
-    conversation.sortedMessages.map {
+    messages.map {
       "Role: \($0.role.rawValue)\nContent: \($0.content)"
     }.joined(separator: "\n\n")
   }
@@ -50,6 +57,10 @@ class ChatEngine {
   func prewarm() {
     session.prewarm()
   }
+  
+  private func getLastUserMessage() -> String {
+    return messages.last?.content ?? "No message available"
+  }
 
   func respondTo() async -> LanguageModelSession.ResponseStream<MessageGenerable>? {
     if estimatedTokenCount < safeTokenLimit {
@@ -67,7 +78,7 @@ class ChatEngine {
         Here is the conversation summary:
         \(conversation.summary ?? "No summary available")
         And the last message from the user:
-        \(conversation.messages.last?.content ?? "No message available")
+        \(getLastUserMessage())
         Respond with the assistant role to the user last message.
         If there is a URL in the user's message, use the WebAnalyserTool to analyse the webpage and add the attachment to the message.
         """
@@ -99,7 +110,7 @@ class ChatEngine {
         \(conversation.summary ?? "No summary available")
 
         Latest message:
-        \(conversation.messages.last?.content ?? "No message available")
+        \(getLastUserMessage())
         """
       }
     }

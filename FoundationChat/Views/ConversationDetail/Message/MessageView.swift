@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MessageView: View {
-  let message: Message
+    let message: Message
 
   var body: some View {
     HStack {
@@ -27,11 +27,32 @@ struct MessageView: View {
 
 #Preview {
   LazyVStack {
-    MessageView(message: .init(content: "Hello world this is a short message",
-                               role: .user,
-                               timestamp: Date()))
-    MessageView(message: .init(content: "Hello world this is a short message",
-                               role: .assistant,
-                               timestamp: Date()))
+    MessageView(message: Message(
+      id: 1,
+      content: "Hello! This is a user message. How are you doing today?",
+      role: .user,
+      timestamp: Date(),
+      conversationId: 1
+    ))
+    
+    MessageView(message: Message(
+      id: 2,
+      content: "I'm doing great, thank you for asking! This is an assistant response with a longer message that demonstrates how the view handles multi-line content.",
+      role: .assistant,
+      timestamp: Date(),
+      conversationId: 1
+    ))
+    
+    MessageView(message: Message(
+      id: 3,
+      content: "Here's a message with an attachment!",
+      role: .assistant,
+      timestamp: Date(),
+      conversationId: 1,
+      attachementTitle: "SwiftUI Documentation",
+      attachementDescription: "Learn how to build amazing apps with SwiftUI",
+      attachementThumbnail: "https://developer.apple.com/assets/elements/icons/swiftui/swiftui-96x96_2x.png"
+    ))
   }
+  .padding()
 }

@@ -1,21 +1,32 @@
 import FoundationModels
-import SwiftData
 import SwiftUI
+import SharingGRDB
 
 struct ConversationDetailView: View {
-  @Environment(\.modelContext) private var modelContext
+  @Dependency(\.defaultDatabase) var database
   @Environment(ChatEngine.self) private var chatEngine
 
   @State var newMessage: String = ""
-  @State var conversation: Conversation
+  let conversation: Conversation
+  @FetchAll(
+      Message
+        .where(\.conversationId == conversation.id)
+        .order(\.timestamp)
+  )
+  var messages: [Message]
   @State var scrollPosition: ScrollPosition = .init()
   @State var isGenerating: Bool = false
   @FocusState var isInputFocused: Bool
+  
+  init(conversation: Conversation) {
+    self.conversation = conversation
+  }
+  
 
   var body: some View {
     ScrollView {
       LazyVStack {
-        ForEach(conversation.sortedMessages) { message in
+        ForEach(messages) { message in
           MessageView(message: message)
             .id(message.id)
         }
@@ -51,35 +62,64 @@ struct ConversationDetailView: View {
 }
 
 extension ConversationDetailView {
-  private func streamNewMessage() async {
-    conversation.messages.append(
-      Message(
-        content: newMessage, role: .user,
-        timestamp: Date()))
-    try? modelContext.save()
-    newMessage = ""
-    withAnimation {
-      scrollPosition.scrollTo(edge: .bottom)
-    }
-    if let stream = await chatEngine.respondTo() {
-      let newMessage = Message(
-        content: "...",
-        role: .assistant,
-        timestamp: Date())
-      conversation.messages.append(newMessage)
-
-      do {
-        for try await part in stream {
-          newMessage.content = part.content ?? ""
-          newMessage.attachementTitle = part.metadata?.title
-          newMessage.attachementThumbnail = part.metadata?.thumbnail
-          newMessage.attachementDescription = part.metadata?.description
-          scrollPosition.scrollTo(edge: .bottom)
+  private func streamNewMessage() async throws {
+    do {
+        try database.write { db in
+          try Message.Draft(
+            content: newMessage,
+            role: .user,
+            timestamp: Date(),
+            conversationId: conversation.id
+          ).insert(db)
         }
-        try modelContext.save()
-      } catch {
-        newMessage.content = "Error: \(error.localizedDescription)"
+      newMessage = ""
+      
+      withAnimation {
+        scrollPosition.scrollTo(edge: .bottom)
       }
+      
+      if let stream = await chatEngine.respondTo() {
+        let assistantDraft = await MainActor.run {
+          Message.Draft(
+            content: "...",
+            role: .assistant,
+            timestamp: Date(),
+            conversationId: conversation.id
+          )
+        }
+        let assistantMessage = try database.write { db in
+          try assistantDraft.inserted(db)
+        }
+
+        do {
+          for try await part in stream {
+            try database.write { db in
+              try Message
+                .find(assistantMessage.id)
+                .update(db) {
+                  $0.content = part.content ?? ""
+                  $0.attachementTitle = part.metadata?.title
+                  $0.attachementThumbnail = part.metadata?.thumbnail
+                  $0.attachementDescription = part.metadata?.description
+                }
+            }
+            
+            await MainActor.run {
+              scrollPosition.scrollTo(edge: .bottom)
+            }
+          }
+        } catch {
+          try database.write { db in
+            try Message
+              .find(assistantMessage.id)
+              .update(db) {
+                $0.content = "Error: \(error.localizedDescription)"
+              }
+          }
+        }
+      }
+    } catch {
+      print("Error saving message: \(error)")
     }
   }
 
@@ -87,11 +127,22 @@ extension ConversationDetailView {
     if let stream = await chatEngine.summarize() {
       do {
         for try await part in stream {
-          conversation.summary = part
+          try database.write { db in
+            try Conversation
+              .find(conversation.id)
+              .update(db) {
+                $0.summary = part
+              }
+          }
         }
-        try modelContext.save()
       } catch {
-        conversation.summary = "Error: \(error.localizedDescription)"
+        try? database.write { db in
+          try Conversation
+            .find(conversation.id)
+            .update(db) {
+              $0.summary = "Error: \(error.localizedDescription)"
+            }
+        }
       }
     }
   }
@@ -99,17 +150,9 @@ extension ConversationDetailView {
 
 #Preview {
   @Previewable var conversation: Conversation = .init(
-    messages: [
-      .init(
-        content: "Hello world",
-        role: .user,
-        timestamp: Date()),
-      .init(
-        content: "How may I asist you today?",
-        role: .assistant,
-        timestamp: Date())
-    ],
+    id: 1,
     summary: "A preview conversation")
   ConversationDetailView(conversation: conversation)
   .environment(ChatEngine(conversation: conversation))
 }
+

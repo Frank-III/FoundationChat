@@ -1,29 +1,39 @@
 import SwiftUI
+import SharingGRDB
 
 struct ConversationRowView: View {
   let conversation: Conversation
+  
+  @FetchAll var lastMessage: [Message]
+  
+  init(conversation: Conversation) {
+    self.conversation = conversation
+    self._lastMessage = FetchAll(
+      Message
+        .where(\.conversationId == conversation.id)
+        .order(\.timestamp.desc())
+        .limit(1)
+    )
+  }
 
   var body: some View {
     HStack(alignment: .center) {
       VStack(alignment: .leading) {
-        Text(conversation.messages.last?.role.rawValue ?? "Unknown")
+        Text(lastMessage.first?.role.rawValue ?? "New Chat")
           .font(.headline)
           .fontWeight(.bold)
-        Text(conversation.summary ?? "No summary")
+        Text(conversation.summary)
           .font(.subheadline)
           .foregroundStyle(.secondary)
           .contentTransition(.interpolate)
       }
       .animation(.bouncy, value: conversation.summary)
       Spacer()
-      Text(
-        Date(
-          timeIntervalSince1970: conversation.messages.last?.timestamp.timeIntervalSince1970 ?? 0
-        ).formatted(
-          date: .omitted, time: .shortened)
-      )
-      .font(.caption)
-      .foregroundStyle(.secondary)
+      if let timestamp = lastMessage.first?.timestamp {
+        Text(timestamp.formatted(date: .omitted, time: .shortened))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
     }
   }
 }
