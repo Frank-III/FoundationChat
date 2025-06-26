@@ -2,7 +2,7 @@ import Foundation
 import StructuredQueries
 
 @Table
-struct Conversation: @MainActor Identifiable {
+struct Conversation{
   let id: Int
   var summary: String = ""
 }

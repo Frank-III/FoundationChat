@@ -10,7 +10,7 @@ struct ConversationRowView: View {
     self.conversation = conversation
     self._lastMessage = FetchAll(
       Message
-        .where { $0.conversationId.eq(conversation.id) }
+        .where(\.conversationId == conversation.id)
         .order(\.timestamp.desc())
         .limit(1)
     )
